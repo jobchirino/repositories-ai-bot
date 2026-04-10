@@ -40,3 +40,6 @@ export async function POST(request) {
     return NextResponse.json({ status: 'error' }, { status: 500 });
   }
 }
+
+//https://repositories-ai-bot.vercel.app/api/webhook/telegram
+//https://api.telegram.org/bot8571902665:AAH6M8NsONYW3ko9DGRl74CpYelIIpvbu2o/setWebhook?url=https://repositories-ai-bot.vercel.app/api/webhook/telegram
