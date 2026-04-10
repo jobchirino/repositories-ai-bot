@@ -38,41 +38,48 @@ export async function POST(request) {
       content: msg.content,
     }));
 
+    let respuestaGemini = ""
     // 4. LLAMAR A GEMINI CON FUNCTION CALLING
-    const { text: respuestaGemini } = await generateText({
-        model: google('gemini-2.5-pro'), // O gemini-1.5-flash si prefieres más velocidad
-        system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. Eres técnico, educado y vas directo al punto.",
-        messages: chatHistory,
-        tools: {
-            listar_repositorios: tool({
-                description: 'Obtiene una lista con los nombres exactos de todos los repositorios públicos de Job. Úsala PRIMERO cuando el usuario pregunte por un proyecto y no sepas el nombre exacto del repositorio.',
-                parameters: z.object({}), // No requiere parámetros
-                execute: async () => {
-                    const res = await fetch(`https://api.github.com/users/jobchirino/repos`);
-                    const repos = await res.json();
-                    // Devolvemos solo un array de strings con los nombres para ahorrar tokens
-                    return repos.map(repo => repo.name).join(', '); 
-                },
-            }),
-            obtener_readme_github: tool({
-                description: 'Obtiene el archivo README de un repositorio público de GitHub de Job para saber de qué trata el proyecto y qué tecnologías usa.',
-                parameters: z.object({
-                  repo_name: z.string().describe('El nombre exacto del repositorio en GitHub, con guiones en lugar de espacios si es necesario.'),
-                }),
-                execute: async ({ repo_name }) => {
-                  console.log(`Gemini decidió buscar el repo: ${repo_name}`);
-                  // Aquí hacemos la llamada real a la API de GitHub
-                  const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`);
-                  if (!res.ok) return "El repositorio no existe o no tiene un README.";
-                
-                  const data = await res.json();
-                  // GitHub devuelve el README en Base64, hay que decodificarlo
-                  return Buffer.from(data.content, 'base64').toString('utf-8');
-                },
-        }),
-      },
-      maxSteps: 3, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
-    });
+    try {
+      const { text } = await generateText({
+          model: google('gemini-2.5-pro'), // O gemini-1.5-flash si prefieres más velocidad
+          system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. Eres técnico, educado y vas directo al punto.",
+          messages: chatHistory,
+          tools: {
+              listar_repositorios: tool({
+                  description: 'Obtiene una lista con los nombres exactos de todos los repositorios públicos de Job. Úsala PRIMERO cuando el usuario pregunte por un proyecto y no sepas el nombre exacto del repositorio.',
+                  parameters: z.object({}), // No requiere parámetros
+                  execute: async () => {
+                      const res = await fetch(`https://api.github.com/users/jobchirino/repos`);
+                      const repos = await res.json();
+                      // Devolvemos solo un array de strings con los nombres para ahorrar tokens
+                      return repos.map(repo => repo.name).join(', '); 
+                  },
+              }),
+              obtener_readme_github: tool({
+                  description: 'Obtiene el archivo README de un repositorio público de GitHub de Job para saber de qué trata el proyecto y qué tecnologías usa.',
+                  parameters: z.object({
+                    repo_name: z.string().describe('El nombre exacto del repositorio en GitHub, con guiones en lugar de espacios si es necesario.'),
+                  }),
+                  execute: async ({ repo_name }) => {
+                    console.log(`Gemini decidió buscar el repo: ${repo_name}`);
+                    // Aquí hacemos la llamada real a la API de GitHub
+                    const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`);
+                    if (!res.ok) return "El repositorio no existe o no tiene un README.";
+                  
+                    const data = await res.json();
+                    // GitHub devuelve el README en Base64, hay que decodificarlo
+                    return Buffer.from(data.content, 'base64').toString('utf-8');
+                  },
+          }),
+        },
+        maxSteps: 3, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
+      });
+      respuestaGemini = text;
+    } catch (error) {
+      console.error("Error consultando a Gemini:", error);
+      respuestaGemini = "Lo siento, mi procesador (Gemini) está un poco saturado en este momento. Por favor, intenta de nuevo en un minuto.";
+    }
 
     // 5. ENVIAR LA RESPUESTA A TELEGRAM
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -89,8 +96,8 @@ export async function POST(request) {
     return NextResponse.json({ status: 'ok' });
 
   } catch (error) {
-    console.error("Error:", error);
-    return NextResponse.json({ status: 'error' }, { status: 500 });
+    console.error("Error crítico en el webhook:", error);
+    return NextResponse.json({ status: 'ok' });
   }
 }
 
