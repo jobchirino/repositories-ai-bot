@@ -1,0 +1,36 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  telegramChatId String    @unique
+  name           String?
+  messages       Message[]
+  createdAt      DateTime  @default(now())
+}
+
+// Tabla para el historial de la conversación (La memoria de Gemini)
+model Message {
+  id        String   @id @default(cuid())
+  role      String   // 'user' o 'model' (o 'assistant')
+  content   String   // El texto del mensaje
+  createdAt DateTime @default(now())
+
+  // Relación con el usuario
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
