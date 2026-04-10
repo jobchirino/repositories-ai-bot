@@ -42,7 +42,7 @@ export async function POST(request) {
     // 4. LLAMAR A GEMINI CON FUNCTION CALLING
     try {
       const { text } = await generateText({
-          model: google('gemini-2.5-pro'), // O gemini-1.5-flash si prefieres más velocidad
+          model: google('gemini-2.5-flash'), // O gemini-1.5-flash si prefieres más velocidad
           system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. Eres técnico, educado y vas directo al punto.",
           messages: chatHistory,
           tools: {
