@@ -43,7 +43,7 @@ export async function POST(request) {
     try {
       const { text } = await generateText({
           model: google('gemini-2.5-flash'), // O gemini-1.5-flash si prefieres más velocidad
-          system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. Eres técnico, educado y vas directo al punto.",
+          system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. ERES ESTRICTO CON ESTO: SIEMPRE debes dar una respuesta final en formato de texto al usuario, incluso si no encuentras la información, si las herramientas fallan, o si no estás seguro.",
           messages: chatHistory,
           tools: {
               listar_repositorios: tool({
@@ -73,9 +73,12 @@ export async function POST(request) {
                   },
           }),
         },
-        maxSteps: 3, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
+        maxSteps: 5, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
       });
-      respuestaGemini = text;
+      respuestaGemini = text.trim();
+      if (!respuestaGemini) {
+        respuestaGemini = "Busqué en mis registros, pero la información sobre ese proyecto en específico es un poco confusa. ¿Podrías mencionarme alguna tecnología que usé ahí o darme otro detalle?";
+      }
     } catch (error) {
       console.error("Error consultando a Gemini:", error);
       respuestaGemini = "Lo siento, mi procesador (Gemini) está un poco saturado en este momento. Por favor, intenta de nuevo en un minuto.";
