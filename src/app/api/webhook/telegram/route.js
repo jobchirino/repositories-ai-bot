@@ -41,7 +41,7 @@ export async function POST(request) {
     let respuestaGemini = ""
     try {
       const result = await generateText({
-          model: google('gemini-2.0-flash'),
+          model: google('gemini-2.5-flash'),
           system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. ERES ESTRICTO CON ESTO: SIEMPRE debes dar una respuesta final en formato de texto al usuario, incluso si no encuentras la información, si las herramientas fallan, o si no estás seguro.",
           messages: chatHistory,
           tools: {
