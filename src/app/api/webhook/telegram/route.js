@@ -95,21 +95,29 @@ export async function POST(request) {
         },
         maxSteps: 10,
         toolChoice: 'auto',
+        onStepFinish: (step) => {
+          console.log("=== STEP FINISH ===");
+          console.log("Step text:", step.text);
+          console.log("Step finishReason:", step.finishReason);
+          console.log("Step toolResults:", JSON.stringify(step.toolResults, null, 2));
+          console.log("====================");
+        },
       });
       
       console.log("=== DEBUG: generateText result ===");
       console.log("text:", result.text);
       console.log("finishReason:", result.finishReason);
-      console.log("toolCalls:", JSON.stringify(result.toolCalls));
-      console.log("toolResults:", JSON.stringify(result.toolResults));
-      console.log("content types:", result.content.map(c => c.type));
+      console.log("toolResults:", JSON.stringify(result.toolResults, null, 2));
       console.log("===================================");
       
       respuestaGemini = result.text.trim();
       
-      if (!respuestaGemini) {
+      if (!respuestaGemini && result.finishReason === 'tool-calls') {
         const toolResultText = result.toolResults
-          .map(tr => typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result))
+          .map(tr => {
+            const output = tr.output;
+            return typeof output === 'string' ? output : JSON.stringify(output);
+          })
           .join('\n');
         console.log("Tool results text:", toolResultText);
         if (toolResultText) {
@@ -117,6 +125,10 @@ export async function POST(request) {
         } else {
           respuestaGemini = "Busqué en mis registros, pero la información sobre ese proyecto en específico es un poco confusa. ¿Podrías mencionarme alguna tecnología que usé ahí o darme otro detalle?";
         }
+      }
+      
+      if (!respuestaGemini) {
+        respuestaGemini = "No pude generar una respuesta. Por favor intenta de nuevo.";
       }
     } catch (error) {
       console.error("Error consultando a Gemini:", error);
