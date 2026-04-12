@@ -39,10 +39,9 @@ export async function POST(request) {
     }));
 
     let respuestaGemini = ""
-    // 4. LLAMAR A GEMINI CON FUNCTION CALLING
     try {
-      const { text } = await generateText({
-          model: google('gemini-2.5-flash'), // O gemini-1.5-flash si prefieres más velocidad
+      const result = await generateText({
+          model: google('gemini-2.0-flash'),
           system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. ERES ESTRICTO CON ESTO: SIEMPRE debes dar una respuesta final en formato de texto al usuario, incluso si no encuentras la información, si las herramientas fallan, o si no estás seguro.",
           messages: chatHistory,
           tools: {
@@ -94,11 +93,30 @@ export async function POST(request) {
                   },
               }),
         },
-        maxSteps: 5, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
+        maxSteps: 10,
+        toolChoice: 'auto',
       });
-      respuestaGemini = text.trim();
+      
+      console.log("=== DEBUG: generateText result ===");
+      console.log("text:", result.text);
+      console.log("finishReason:", result.finishReason);
+      console.log("toolCalls:", JSON.stringify(result.toolCalls));
+      console.log("toolResults:", JSON.stringify(result.toolResults));
+      console.log("content types:", result.content.map(c => c.type));
+      console.log("===================================");
+      
+      respuestaGemini = result.text.trim();
+      
       if (!respuestaGemini) {
-        respuestaGemini = "Busqué en mis registros, pero la información sobre ese proyecto en específico es un poco confusa. ¿Podrías mencionarme alguna tecnología que usé ahí o darme otro detalle?";
+        const toolResultText = result.toolResults
+          .map(tr => typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result))
+          .join('\n');
+        console.log("Tool results text:", toolResultText);
+        if (toolResultText) {
+          respuestaGemini = "Tengo información de tus repositorios: " + toolResultText;
+        } else {
+          respuestaGemini = "Busqué en mis registros, pero la información sobre ese proyecto en específico es un poco confusa. ¿Podrías mencionarme alguna tecnología que usé ahí o darme otro detalle?";
+        }
       }
     } catch (error) {
       console.error("Error consultando a Gemini:", error);
