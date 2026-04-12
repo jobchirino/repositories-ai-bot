@@ -48,30 +48,51 @@ export async function POST(request) {
           tools: {
               listar_repositorios: tool({
                   description: 'Obtiene una lista con los nombres exactos de todos los repositorios públicos de Job. Úsala PRIMERO cuando el usuario pregunte por un proyecto y no sepas el nombre exacto del repositorio.',
-                  parameters: z.object({}), // No requiere parámetros
+                  parameters: z.object({}),
                   execute: async () => {
-                      const res = await fetch(`https://api.github.com/users/jobchirino/repos`);
+                    try {
+                      const res = await fetch(`https://api.github.com/users/jobchirino/repos`, {
+                        headers: { 'User-Agent': 'Repositories-AI-Bot' }
+                      });
+                      if (!res.ok) {
+                        return "Error al consultar la API de GitHub para listar repositorios.";
+                      }
                       const repos = await res.json();
-                      // Devolvemos solo un array de strings con los nombres para ahorrar tokens
-                      return repos.map(repo => repo.name).join(', '); 
+                      if (!Array.isArray(repos)) {
+                        return "Error al consultar la API de GitHub para listar repositorios.";
+                      }
+                      return repos.map(repo => repo.name).join(', ');
+                    } catch (error) {
+                      console.error("Error en listar_repositorios:", error);
+                      return "Error al consultar la API de GitHub para listar repositorios.";
+                    }
                   },
               }),
               obtener_readme_github: tool({
                   description: 'Obtiene el archivo README de un repositorio público de GitHub de Job para saber de qué trata el proyecto y qué tecnologías usa.',
                   parameters: z.object({
-                    repo_name: z.string().describe('El nombre exacto del repositorio en GitHub, con guiones en lugar de espacios si es necesario.'),
+                    repo_name: z.string().describe('El nombre exacto del repositorio'),
                   }),
                   execute: async ({ repo_name }) => {
-                    console.log(`Gemini decidió buscar el repo: ${repo_name}`);
-                    // Aquí hacemos la llamada real a la API de GitHub
-                    const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`);
-                    if (!res.ok) return "El repositorio no existe o no tiene un README.";
-                  
-                    const data = await res.json();
-                    // GitHub devuelve el README en Base64, hay que decodificarlo
-                    return Buffer.from(data.content, 'base64').toString('utf-8');
+                    try {
+                      console.log(`Gemini decidió buscar el repo: ${repo_name}`);
+                      const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`, {
+                        headers: { 'User-Agent': 'Repositories-AI-Bot' }
+                      });
+                      if (!res.ok) {
+                        if (res.status === 404) {
+                          return "Repositorio no encontrado o no tiene README.";
+                        }
+                        return "Error al consultar la API de GitHub para este repositorio.";
+                      }
+                      const data = await res.json();
+                      return Buffer.from(data.content, 'base64').toString('utf-8');
+                    } catch (error) {
+                      console.error("Error en obtener_readme_github:", error);
+                      return "Error al consultar la API de GitHub para este repositorio.";
+                    }
                   },
-          }),
+              }),
         },
         maxSteps: 5, // CRUCIAL: Permite que Gemini pida la herramienta, tu código la ejecute, y Gemini lea el resultado para responder.
       });
