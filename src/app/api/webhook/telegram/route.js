@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { google } from '@ai-sdk/google';
 import { generateText, tool } from 'ai';
-import { z } from 'zod';
+import { mcpTools, getReadmeTool, listRepositoriesTool } from '@/mcp';
 
 export async function POST(request) {
   try {
@@ -45,7 +45,7 @@ export async function POST(request) {
 
     try {
       const result = await generateText({
-        model: google('gemini-2.5-flash'),
+        model: google('gemini-2.0-flash-exp'),
         system: `Eres el asistente personal del desarrollador Job Chirino. Tu misión es responder preguntas sobre su experiencia, sus proyectos de GitHub y cualquier código que haya escrito. 
 
 REGLAS ABSOLUTAS:
@@ -54,54 +54,27 @@ REGLAS ABSOLUTAS:
 3. Si las herramientas fallan o no encuentras información, indica claramente qué intentaste y pide más contexto.
 4. Usa las herramientas disponibles para obtener información actualizada de GitHub.
 5. Responde de manera útil, concisa y en el mismo idioma que el usuario.
-6. IMPORTANTE: Cuando el usuario mencione un proyecto específico, usa OBLIGATORIAMENTE el nombre exacto del repositorio para invocar la herramienta obtener_readme_github con el parámetro "repo".
-7. Ejemplo: Si el usuario dice "háblame de cesarAugustoApp", debes invocar: obtener_readme_github({ repo: "cesarAugustoApp" })`,
+6. IMPORTANTE: Cuando el usuario mencione un proyecto específico, usa OBLIGATORIAMENTE la herramienta get_readme con el parámetro repo_name contendo el nombre exacto del repositorio.
+7. Ejemplo: Si el usuario dice "háblame de cesarAugustoApp", debes invocar: get_readme({ repo_name: "cesarAugustoApp" })`,
         messages: chatHistory,
         tools: {
-          listar_repositorios: tool({
-            description: 'Lista todos los repositorios públicos de jobchirino en GitHub. Úsala cuando necesites saber qué proyectos existen o cuando no recuerdes el nombre exacto de un repositorio.',
-            parameters: z.object({}),
+          list_repositories: tool({
+            description: listRepositoriesTool.description,
+            parameters: listRepositoriesTool.inputSchema,
             execute: async () => {
-              try {
-                const res = await fetch('https://api.github.com/users/jobchirino/repos?sort=updated&per_page=30', {
-                  headers: { 'User-Agent': 'Repositories-AI-Bot' },
-                });
-                if (!res.ok) {
-                  return 'Error al consultar la API de GitHub.';
-                }
-                const repos = await res.json();
-                if (!Array.isArray(repos)) {
-                  return 'Error al procesar la lista de repositorios.';
-                }
-                return repos.map((repo) => `${repo.name}: ${repo.description || 'Sin descripción'} (${repo.language || 'N/A'})`).join('\n');
-              } catch (error) {
-                console.error('Error en listar_repositorios:', error);
-                return 'Error de conexión con GitHub.';
-              }
+              const result = await mcpTools[0].execute();
+              return result.content[0].text;
             },
           }),
-          obtener_readme_github: tool({
-            description: 'Obtiene el README completo de un repositorio de jobchirino. Usa el nombre EXACTO del repositorio que aparece en la lista.',
-            parameters: z.object({
-              repo: z.string().describe('Nombre exacto del repositorio: cesarAugustoApp, trainy-app, cinema-website-react, proyecto-II-franksGym-web, etc.'),
-            }),
-            execute: async ({ repo }) => {
-              try {
-                const res = await fetch(`https://api.github.com/repos/jobchirino/${repo}/readme`, {
-                  headers: { 'User-Agent': 'Repositories-AI-Bot', Accept: 'application/vnd.github.v3.raw' },
-                });
-                if (!res.ok) {
-                  if (res.status === 404) {
-                    return `El repositorio "${repo}" no fue encontrado o no tiene README.`;
-                  }
-                  return 'Error al consultar este repositorio.';
-                }
-                const content = await res.text();
-                return content.slice(0, 10000);
-              } catch (error) {
-                console.error('Error en obtener_readme_github:', error);
-                return 'Error de conexión con GitHub.';
+          get_readme: tool({
+            description: getReadmeTool.description,
+            parameters: getReadmeTool.inputSchema,
+            execute: async ({ repo_name }) => {
+              if (!repo_name) {
+                return 'Error: No se proporcionó el nombre del repositorio.';
               }
+              const result = await mcpTools[1].execute(repo_name);
+              return result.content[0].text;
             },
           }),
         },
@@ -114,7 +87,7 @@ REGLAS ABSOLUTAS:
         const toolOutput = result.toolResults
           ?.map((tr) => {
             const output = typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output);
-            if (output.includes('undefined')) {
+            if (output.includes('undefined') || output.includes('No se proporcionó')) {
               return 'La herramienta no pudo obtener el nombre del repositorio. Por favor intenta mencionar el nombre del proyecto de forma más clara (ej: "cesarAugustoApp", "trainy-app").';
             }
             return output;
