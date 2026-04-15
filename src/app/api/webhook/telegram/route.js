@@ -53,7 +53,9 @@ REGLAS ABSOLUTAS:
 2. NUNCA devuelvas solo resultados de herramientas sin procesar. Debes explicar la información al usuario.
 3. Si las herramientas fallan o no encuentras información, indica claramente qué intentaste y pide más contexto.
 4. Usa las herramientas disponibles para obtener información actualizada de GitHub.
-5. Responde de manera útil, concisa y en el mismo idioma que el usuario.`,
+5. Responde de manera útil, concisa y en el mismo idioma que el usuario.
+6. IMPORTANTE: Cuando el usuario mencione un proyecto específico, usa OBLIGATORIAMENTE el nombre exacto del repositorio para invocar la herramienta obtener_readme_github con el parámetro "repo".
+7. Ejemplo: Si el usuario dice "háblame de cesarAugustoApp", debes invocar: obtener_readme_github({ repo: "cesarAugustoApp" })`,
         messages: chatHistory,
         tools: {
           listar_repositorios: tool({
@@ -79,23 +81,23 @@ REGLAS ABSOLUTAS:
             },
           }),
           obtener_readme_github: tool({
-            description: 'Obtiene el README completo de un repositorio de jobchirino. Úsala para saber en detalle de qué trata un proyecto, qué tecnologías usa, cómo instalarlo, etc.',
+            description: 'Obtiene el README completo de un repositorio de jobchirino. Usa el nombre EXACTO del repositorio que aparece en la lista.',
             parameters: z.object({
-              repo_name: z.string().describe('El nombre exacto del repositorio en GitHub'),
+              repo: z.string().describe('Nombre exacto del repositorio: cesarAugustoApp, trainy-app, cinema-website-react, proyecto-II-franksGym-web, etc.'),
             }),
-            execute: async ({ repo_name }) => {
+            execute: async ({ repo }) => {
               try {
-                const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`, {
+                const res = await fetch(`https://api.github.com/repos/jobchirino/${repo}/readme`, {
                   headers: { 'User-Agent': 'Repositories-AI-Bot', Accept: 'application/vnd.github.v3.raw' },
                 });
                 if (!res.ok) {
                   if (res.status === 404) {
-                    return `El repositorio "${repo_name}" no fue encontrado o no tiene README.`;
+                    return `El repositorio "${repo}" no fue encontrado o no tiene README.`;
                   }
                   return 'Error al consultar este repositorio.';
                 }
                 const content = await res.text();
-                return content.slice(0, 8000);
+                return content.slice(0, 10000);
               } catch (error) {
                 console.error('Error en obtener_readme_github:', error);
                 return 'Error de conexión con GitHub.';
@@ -110,13 +112,19 @@ REGLAS ABSOLUTAS:
 
       if (!respuestaGemini && result.finishReason === 'tool-calls') {
         const toolOutput = result.toolResults
-          ?.map((tr) => (typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output)))
+          ?.map((tr) => {
+            const output = typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output);
+            if (output.includes('undefined')) {
+              return 'La herramienta no pudo obtener el nombre del repositorio. Por favor intenta mencionar el nombre del proyecto de forma más clara (ej: "cesarAugustoApp", "trainy-app").';
+            }
+            return output;
+          })
           .join('\n\n');
 
-        if (toolOutput) {
+        if (toolOutput && !toolOutput.includes('no pudo obtener')) {
           respuestaGemini = `Encontré información relevante:\n\n${toolOutput}`;
         } else {
-          respuestaGemini = 'Busqué en mis herramientas pero no pude obtener información útil. ¿Podrías darme más detalles sobre lo que necesitas?';
+          respuestaGemini = toolOutput;
         }
       }
 
