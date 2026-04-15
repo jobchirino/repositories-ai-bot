@@ -8,152 +8,139 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const message = body.message;
-    if (!message || !message.text) return NextResponse.json({ status: 'ok' });
+
+    if (!message || !message.text) {
+      return NextResponse.json({ status: 'ok' });
+    }
 
     const chatId = message.chat.id.toString();
-    const text = message.text;
+    const text = message.text.trim();
 
-    // 1. Guardar o buscar al usuario
+    if (text.startsWith('/')) {
+      return NextResponse.json({ status: 'ok' });
+    }
+
     const user = await prisma.user.upsert({
       where: { telegramChatId: chatId },
       update: {},
-      create: { telegramChatId: chatId, name: message.chat.first_name },
+      create: { telegramChatId: chatId, name: message.chat.first_name || 'Usuario' },
     });
 
-    // 2. Guardar el mensaje del usuario
     await prisma.message.create({
       data: { role: 'user', content: text, userId: user.id },
     });
 
-    // 3. RECUPERAR LA MEMORIA (Últimos 10 mensajes)
     const rawHistory = await prisma.message.findMany({
       where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
+      orderBy: { createdAt: 'asc' },
+      take: 20,
     });
-    
-    // Invertimos el array para que queden en orden cronológico para Gemini
-    const chatHistory = rawHistory.reverse().map((msg) => ({
+
+    const chatHistory = rawHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
     }));
 
-    let respuestaGemini = ""
+    let respuestaGemini = '';
+
     try {
       const result = await generateText({
-          model: google('gemini-2.5-flash'),
-          system: "Eres el asistente personal del desarrollador Job. Tu misión es responder preguntas sobre su experiencia y sus proyectos de GitHub. ERES ESTRICTO CON ESTO: SIEMPRE debes dar una respuesta final en formato de texto al usuario, incluso si no encuentras la información, si las herramientas fallan, o si no estás seguro.",
-          messages: chatHistory,
-          tools: {
-              listar_repositorios: tool({
-                  description: 'Obtiene una lista con los nombres exactos de todos los repositorios públicos de Job. Úsala PRIMERO cuando el usuario pregunte por un proyecto y no sepas el nombre exacto del repositorio.',
-                  parameters: z.object({}),
-                  execute: async () => {
-                    try {
-                      const res = await fetch(`https://api.github.com/users/jobchirino/repos`, {
-                        headers: { 'User-Agent': 'Repositories-AI-Bot' }
-                      });
-                      if (!res.ok) {
-                        return "Error al consultar la API de GitHub para listar repositorios.";
-                      }
-                      const repos = await res.json();
-                      if (!Array.isArray(repos)) {
-                        return "Error al consultar la API de GitHub para listar repositorios.";
-                      }
-                      return repos.map(repo => repo.name).join(', ');
-                    } catch (error) {
-                      console.error("Error en listar_repositorios:", error);
-                      return "Error al consultar la API de GitHub para listar repositorios.";
-                    }
-                  },
-              }),
-              obtener_readme_github: tool({
-                  description: 'Obtiene el archivo README de un repositorio público de GitHub de Job para saber de qué trata el proyecto y qué tecnologías usa.',
-                  parameters: z.object({
-                    repo_name: z.string().describe('El nombre exacto del repositorio'),
-                  }),
-                  execute: async ({ repo_name }) => {
-                    try {
-                      console.log(`Gemini decidió buscar el repo: ${repo_name}`);
-                      const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`, {
-                        headers: { 'User-Agent': 'Repositories-AI-Bot' }
-                      });
-                      if (!res.ok) {
-                        if (res.status === 404) {
-                          return "Repositorio no encontrado o no tiene README.";
-                        }
-                        return "Error al consultar la API de GitHub para este repositorio.";
-                      }
-                      const data = await res.json();
-                      return Buffer.from(data.content, 'base64').toString('utf-8');
-                    } catch (error) {
-                      console.error("Error en obtener_readme_github:", error);
-                      return "Error al consultar la API de GitHub para este repositorio.";
-                    }
-                  },
-              }),
+        model: google('gemini-2.0-flash-exp'),
+        system: `Eres el asistente personal del desarrollador Job Chirino. Tu misión es responder preguntas sobre su experiencia, sus proyectos de GitHub y cualquier código que haya escrito. 
+
+REGLAS ABSOLUTAS:
+1. SIEMPRE debes dar una respuesta final en formato de texto al usuario, sin excepción.
+2. NUNCA devuelvas solo resultados de herramientas sin procesar. Debes explicar la información al usuario.
+3. Si las herramientas fallan o no encuentras información, indica claramente qué intentaste y pide más contexto.
+4. Usa las herramientas disponibles para obtener información actualizada de GitHub.
+5. Responde de manera útil, concisa y en el mismo idioma que el usuario.`,
+        messages: chatHistory,
+        tools: {
+          listar_repositorios: tool({
+            description: 'Lista todos los repositorios públicos de jobchirino en GitHub. Úsala cuando necesites saber qué proyectos existen o cuando no recuerdes el nombre exacto de un repositorio.',
+            parameters: z.object({}),
+            execute: async () => {
+              try {
+                const res = await fetch('https://api.github.com/users/jobchirino/repos?sort=updated&per_page=30', {
+                  headers: { 'User-Agent': 'Repositories-AI-Bot' },
+                });
+                if (!res.ok) {
+                  return 'Error al consultar la API de GitHub.';
+                }
+                const repos = await res.json();
+                if (!Array.isArray(repos)) {
+                  return 'Error al procesar la lista de repositorios.';
+                }
+                return repos.map((repo) => `${repo.name}: ${repo.description || 'Sin descripción'} (${repo.language || 'N/A'})`).join('\n');
+              } catch (error) {
+                console.error('Error en listar_repositorios:', error);
+                return 'Error de conexión con GitHub.';
+              }
+            },
+          }),
+          obtener_readme_github: tool({
+            description: 'Obtiene el README completo de un repositorio de jobchirino. Úsala para saber en detalle de qué trata un proyecto, qué tecnologías usa, cómo instalarlo, etc.',
+            parameters: z.object({
+              repo_name: z.string().describe('El nombre exacto del repositorio en GitHub'),
+            }),
+            execute: async ({ repo_name }) => {
+              try {
+                const res = await fetch(`https://api.github.com/repos/jobchirino/${repo_name}/readme`, {
+                  headers: { 'User-Agent': 'Repositories-AI-Bot', Accept: 'application/vnd.github.v3.raw' },
+                });
+                if (!res.ok) {
+                  if (res.status === 404) {
+                    return `El repositorio "${repo_name}" no fue encontrado o no tiene README.`;
+                  }
+                  return 'Error al consultar este repositorio.';
+                }
+                const content = await res.text();
+                return content.slice(0, 8000);
+              } catch (error) {
+                console.error('Error en obtener_readme_github:', error);
+                return 'Error de conexión con GitHub.';
+              }
+            },
+          }),
         },
-        maxSteps: 10,
-        toolChoice: 'auto',
-        onStepFinish: (step) => {
-          console.log("=== STEP FINISH ===");
-          console.log("Step text:", step.text);
-          console.log("Step finishReason:", step.finishReason);
-          console.log("Step toolResults:", JSON.stringify(step.toolResults, null, 2));
-          console.log("====================");
-        },
+        maxSteps: 5,
       });
-      
-      console.log("=== DEBUG: generateText result ===");
-      console.log("text:", result.text);
-      console.log("finishReason:", result.finishReason);
-      console.log("toolResults:", JSON.stringify(result.toolResults, null, 2));
-      console.log("===================================");
-      
+
       respuestaGemini = result.text.trim();
-      
+
       if (!respuestaGemini && result.finishReason === 'tool-calls') {
-        const toolResultText = result.toolResults
-          .map(tr => {
-            const output = tr.output;
-            return typeof output === 'string' ? output : JSON.stringify(output);
-          })
-          .join('\n');
-        console.log("Tool results text:", toolResultText);
-        if (toolResultText) {
-          respuestaGemini = "Tengo información de tus repositorios: " + toolResultText;
+        const toolOutput = result.toolResults
+          ?.map((tr) => (typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output)))
+          .join('\n\n');
+
+        if (toolOutput) {
+          respuestaGemini = `Encontré información relevante:\n\n${toolOutput}`;
         } else {
-          respuestaGemini = "Busqué en mis registros, pero la información sobre ese proyecto en específico es un poco confusa. ¿Podrías mencionarme alguna tecnología que usé ahí o darme otro detalle?";
+          respuestaGemini = 'Busqué en mis herramientas pero no pude obtener información útil. ¿Podrías darme más detalles sobre lo que necesitas?';
         }
       }
-      
+
       if (!respuestaGemini) {
-        respuestaGemini = "No pude generar una respuesta. Por favor intenta de nuevo.";
+        respuestaGemini = 'Tuve un problema al procesar tu mensaje. Por favor, intenta de nuevo.';
       }
     } catch (error) {
-      console.error("Error consultando a Gemini:", error);
-      respuestaGemini = "Lo siento, mi procesador (Gemini) está un poco saturado en este momento. Por favor, intenta de nuevo en un minuto.";
+      console.error('Error consultando Gemini:', error);
+      respuestaGemini = 'Mi cerebro (Gemini) está ocupado en este momento. Por favor, intenta de nuevo en un momento.';
     }
 
-    // 5. ENVIAR LA RESPUESTA A TELEGRAM
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: respuestaGemini }),
     });
 
-    // 6. GUARDAR LA RESPUESTA DE GEMINI EN LA BD
     await prisma.message.create({
       data: { role: 'model', content: respuestaGemini, userId: user.id },
     });
 
     return NextResponse.json({ status: 'ok' });
-
   } catch (error) {
-    console.error("Error crítico en el webhook:", error);
+    console.error('Error crítico en webhook:', error);
     return NextResponse.json({ status: 'ok' });
   }
 }
-
-//https://repositories-ai-bot.vercel.app/api/webhook/telegram
-//https://api.telegram.org/bot8571902665:AAH6M8NsONYW3ko9DGRl74CpYelIIpvbu2o/setWebhook?url=https://repositories-ai-bot.vercel.app/api/webhook/telegram
