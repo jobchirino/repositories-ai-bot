@@ -13,6 +13,7 @@
     "@ai-sdk/google": "^3.0.61",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.19.3",
+    "@upstash/qstash": "^2.10.1",
     "ai": "^6.0.156",
     "dotenv": "^17.4.1",
     "next": "16.2.3",
