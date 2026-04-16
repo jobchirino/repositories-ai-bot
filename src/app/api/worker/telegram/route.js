@@ -46,7 +46,7 @@ async function handler(request) {
 
     try {
       const result = await generateText({
-        model: google('gemini-2.0-flash-exp'),
+        model: google('gemini-2.5-flash'),
         system: `Eres el asistente personal del desarrollador Job Chirino. Tu misión es responder preguntas sobre su experiencia, sus proyectos de GitHub y cualquier código que haya escrito. 
 
 REGLAS ABSOLUTAS:
